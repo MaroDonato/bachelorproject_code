@@ -1,33 +1,114 @@
-# Input: fastq sequence files.
-# Output:
-#  - peptide_counts (csv): file with each DNA sequence, peptide sequence and count
-#  - peptide_clean (fasta): file with peptide sequences based on linker, sorted on prevalence
-#  - peptide_alignment (?): file with top N peptides aligned locally
-# Optional (if I have time):
-#  - Peptide sequence -> SMILES (including the non-canonical amino acids)
-
-# =====Imports===== #
-import csv
-import os
-from collections import Counter, defaultdict
-from multiprocessing import Pool
-
 import regex
-from Bio import SeqIO
-from Bio.Seq import Seq
 
-if __name__ == '__main__':
-    for filename in os.listdir('SEQ'):
-        input_file = os.path.join('SEQ', filename)
-        sample = filename.split('_')[0]
-        if '_R1_' in filename:
-            output_name = f'{sample}_R1'
+
+def compile_regex(split_str: str, error: float):
+    """
+    Compiles the regex to speed up the code, given the string that should be compiled and the error percentage.
+    :param split_str: The substring that the sequence should be split on (str).
+    :param error: The allowed error percentage (float).
+    :return: Compiled regex pattern (Pattern[str]).
+    """
+
+    substitutions = int(len(split_str) / 100 * error)
+    return regex.compile(f'({split_str}){{s<={substitutions}}}')
+
+
+def find_and_split(compiled_pattern, sequence: str, part: int):
+    """
+    Splits a DNA or peptide sequence on a subsequence (primer/linker sequence) given the compiled regex, the sequence
+    and whether the part before or after the split should be returned.
+
+    :param compiled_pattern: The compiled regex pattern of the primer and the allowed error (Pattern).
+    :param sequence: The sequence that should be checked (str).
+    :param part: If the part before (0) or after (-1) the split should be used (int).
+    :return: Coding sequence (str) or None.
+    """
+
+    # If the subsequence is present in the sequence, split is a list of more than one item.
+    split = compiled_pattern.split(sequence)
+    # Return the part before/after the subsequence as a string if there was a split done, else return None.
+    return split[part] if len(split) > 1 else None
+
+
+def translate(coding_seq, codon_table, stop_codons=("TAA", "TAG", "TGA")):
+    """
+    Function to translate the coding DNA sequence to its corresponding protein sequence using a custom codon table.
+
+    :param coding_seq: The DNA coding sequence (str).
+    :param codon_table: The (reprogrammed) codon table (dict).
+    :param stop_codons: The stop codons (tuple).
+    :return: Amino acid sequence (str).
+    """
+
+    peptide = ''
+    for i in range(0, len(coding_seq), 3):
+        codon = coding_seq[i:i + 3]
+        # If codon is of length 3, continue translation, else break.
+        if len(codon) != 3:
+            break
+        if codon in codon_table:
+            peptide += codon_table[codon]
+            if codon in stop_codons:
+                break
+        # Unknown amino acid.
         else:
-            output_name = f'{sample}_R2'
-        print(output_name, input_file)
+            peptide += 'X'
+    return peptide
 
-        counts_file = f'peptide_counts_{output_name}.csv'
-        clean_file = f'peptide_clean_{output_name}.fasta'
-        alignment_file = f'peptide_alignment{output_name}.?'
-        main(input_file, counts_file, clean_file)
-        break
+
+def translate_backwards(coding_seq, codon_table):
+    """
+        Function to translate the coding DNA sequence starting at the reverse primers to its corresponding protein
+        sequence using a custom codon table. This is to account for frameshifts.
+
+        :param coding_seq: The DNA coding sequence (str).
+        :param codon_table: The (reprogrammed) codon table (dict).
+        :param stop_codons: The stop codons (tuple).
+        :return: Amino acid sequence (str).
+    """
+
+    peptide = ''
+    # Loop over coding sequence backwards.
+    for i in range(len(coding_seq) - 1, -1, -3):
+        codon = coding_seq[i - 2:i + 1]
+        # If codon is of length 3, continue translation.
+        if len(codon) != 3:
+            break
+        if codon in codon_table:
+            peptide += codon_table[codon]
+            # if codon in stop_codons:
+            #     break
+        else:
+            peptide += 'X'  # unknown amino acid
+    # Reverse resulting peptide.
+    return peptide[::-1]
+
+
+def translate_helm(coding_seq, codon_table, stop_codons=("TAA", "TAG", "TGA")):
+    """
+        Function to translate the coding DNA sequence to its corresponding protein sequence using a custom codon table.
+        HELM sequence is used as output, as this way the codon table can contain unnatural amino acids.
+
+        :param coding_seq: The DNA coding sequence (str).
+        :param codon_table: The (reprogrammed) codon table (dict).
+        :param stop_codons: The stop codons (tuple).
+        :return: HELM amino acid sequence (str).
+    """
+
+    peptide = 'PEPTIDE1{'
+    for i in range(0, len(coding_seq), 3):
+        codon = coding_seq[i:i + 3]
+        # If codon is of length 3, continue translation, else break.
+        if len(codon) != 3:
+            break
+        if codon in codon_table:
+            if codon in stop_codons:
+                break
+            peptide += codon_table[codon]
+            peptide += '.'
+        # Unknown amino acid.
+        else:
+            peptide += 'X'
+    peptide = peptide[:-1]
+    peptide += '}$$$$'
+    return peptide

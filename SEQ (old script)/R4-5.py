@@ -28,10 +28,10 @@ Common problems:
 '''
 import os
 path = os.getcwd()
-DataFolderLocation = r'/Users/maro/PycharmProjects/bachelorproject_sequences/SEQ2'
+DataFolderLocation = r'/Users/maro/PycharmProjects/bachelorproject_code/SEQ (old script)'
 BaseSelectionRoundNumber = 4
 TopNPeptidesNumber = 100
-SummaryFileName = r'/Users/maro/PycharmProjects/bachelorproject_sequences/SEQ2/summary'
+SummaryFileName = r'/Users/maro/PycharmProjects/bachelorproject_code/SEQ (old script)/summary'
 Initiator = 'Y'
 expanded = 0    #change to 1 for expanded details about sequences, or 0 for simple sorting
 
@@ -1774,7 +1774,7 @@ def SortedPeptideSequencesList(fastqFileLocation,minLen,maxLen):
     for Line in Lines:
         #only taking through sequences with exact matches to forward and reverse primers (may exclude some sequences with poor sequence quality or single misreads)
         if ('ATACTAATACGACTCACTATAGGATTAAGGAGGTGATATTTATG' in Line) and ('TAGGACGGGGGGCGGGAGGCGGG' in Line):
-            startIndex = Line.find('ATACTAATACGACTCACTATAGGATTAAGGAGGTGATATTTATG') + 45
+            startIndex = Line.find('ATACTAATACGACTCACTATAGGATTAAGGAGGTGATATTTATG') + 41
             endIndex = Line.find('TAGGACGGGGGGCGGGAGGCGGG') + 3
             #trimming to only coding sequence
             Line = Line[startIndex:endIndex]

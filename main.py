@@ -2,9 +2,8 @@
 # Output:
 #  - peptide_counts (csv): file with each DNA sequence, peptide sequence and count
 #  - peptide_clean (fasta): file with peptide sequences based on linker, sorted on prevalence
+# Optional output (not used for report):
 #  - peptide_alignment (?): file with top N peptides aligned locally
-# Optional (if I have time):
-#  - Peptide sequence -> SMILES (including the non-canonical amino acids)
 
 # =====Imports===== #
 import csv
@@ -12,24 +11,24 @@ import os
 from collections import Counter, defaultdict
 from multiprocessing import Pool
 
-import regex
 from Bio import SeqIO
 from Bio.Seq import Seq
-
+from sequence_analysis import compile_regex, find_and_split, translate, translate_backwards
 
 # =====Inputs===== #
-# Filename(s) todo change this (see above)
-input_file = 'SEQ2/S2RF1LinR5.fastq'
-output_name = 'S2RF1LinR5_R1'
-
-counts_file = f'peptide_counts_{output_name}.csv'
-clean_file = f'peptide_clean_{output_name}.fasta'
-clean_file_rev = f'peptide_clean_rev_{output_name}.fasta'
-alignment_file = f'peptide_alignment{output_name}.?'
+# Folder with sequences.
+folder = 'SEQ'
+# Number of peptides that should be picked to be aligned (top n from top will be picked).
+n = 100
+# Minimum length of the peptide.
+min_length = 11
+library = 'Cyclic'
 # Linker and primer sequences
 linker_seq = 'GGGGGS'
 fw_primer = 'ATACTAATACGACTCACTATAGGATTAAGGAGGTGATATTTATG'
 rev_primer = 'TAGGACGGGGGGCGGGAGGCGGG'
+# Optional: the linker with a frameshift.
+frameshift_linker_seq = 'RWRRR*'
 # Codon table
 codon_table = {
     "TTT": "F", "TCT": "S", "TAT": "Y", "TGT": "C",
@@ -42,7 +41,7 @@ codon_table = {
     "CTA": "L", "CCA": "P", "CAA": "Q", "CGA": "R",
     "CTG": "L", "CCG": "P", "CAG": "Q", "CGG": "R",
 
-    "ATT": "I", "ACT": "T", "AAT": "N", "AGT": "S",  #  todo AGT -> Z (pentafluorophenylalanine)
+    "ATT": "I", "ACT": "T", "AAT": "N", "AGT": "Z",  # AGT -> Z (pentafluorophenylalanine)
     "ATC": "I", "ACC": "T", "AAC": "N", "AGC": "S",
     "ATA": "I", "ACA": "T", "AAA": "K", "AGA": "R",
     "ATG": "M", "ACG": "T", "AAG": "K", "AGG": "R",
@@ -53,91 +52,21 @@ codon_table = {
     "GTG": "V", "GCG": "A", "GAG": "E", "GGG": "G"
 }
 start_codon = 'ATG'
-stop_codons = ("TAA", "TAG", "TGA")
 
 # Automatically changed.
 flipped_fw_primer = str(Seq(fw_primer).reverse_complement())
 
 
 # =====Regex compiling===== #
-def compile_regex(split_str: str, error: float):
-    """
-    Compiles the regex to speed up the code, given the string that should be compiled and the error percentage.
-    :param split_str: The substring that the sequence should be split on (str).
-    :param error: The allowed error percentage (float).
-    :return: Compiled regex pattern (Pattern[str]).
-    """
-
-    substitutions = int(len(split_str) / 100 * error)
-    return regex.compile(f'({split_str}){{s<={substitutions}}}')
-
 # Compile the regex for find_and_split(), the allowed error percentage can be changed here.
 fw_primer_pattern = compile_regex(fw_primer, error=0)
 flipped_fw_primer_pattern = compile_regex(flipped_fw_primer, error=0)
 rev_primer_pattern = compile_regex(rev_primer, error=0)
 linker_pattern = compile_regex(linker_seq + '\\*', error=0) if linker_seq else None
+frameshift_linker_pattern = compile_regex(frameshift_linker_seq + '\\*', error=0) if frameshift_linker_seq else None
 
 
 # =====Functions===== #
-def find_and_split(compiled_pattern, sequence: str, part: int):
-    """
-    Splits a DNA or peptide sequence on a subsequence (primer/linker sequence) given the compiled regex, the sequence
-    and whether the part before or after the split should be returned.
-
-    :param compiled_pattern: The compiled regex pattern of the primer and the allowed error (Pattern).
-    :param sequence: The sequence that should be checked (str).
-    :param part: If the part before (0) or after (-1) the split should be used (int).
-    :return: Coding sequence (str) or None.
-    """
-
-    # If the subsequence is present in the sequence, split is a list of more than one item.
-    split = compiled_pattern.split(sequence)
-    # Return the part before/after the subsequence as a string if there was a split done, else return None.
-    return split[part] if len(split) > 1 else None
-
-
-def translate(coding_seq):
-    """
-    Function to translate the coding DNA sequence to its corresponding protein sequence using a custom codon table.
-
-    :param coding_seq: The DNA coding sequence (str).
-    :return: Amino acid sequence (str).
-    """
-
-    peptide = ''
-    for i in range(0, len(coding_seq), 3):
-        codon = coding_seq[i:i + 3]
-        # If codon is of length 3, continue translation, else break.
-        if len(codon) != 3:
-            break
-        if codon in codon_table:
-            peptide += codon_table[codon]
-            if codon in stop_codons:
-                break
-        # Unknown amino acid.
-        else:
-            peptide += 'X'
-    return peptide
-
-
-def translate_backwards(coding_seq):
-    peptide = ''
-    # Loop over coding sequence backwards.
-    for i in range(len(coding_seq) - 1, -1, -3):
-        codon = coding_seq[i - 2:i + 1]
-        # If codon is of length 3, continue translation.
-        if len(codon) != 3:
-            break
-        if codon in codon_table:
-            peptide += codon_table[codon]
-            # if codon in stop_codons:
-            #     break
-        else:
-            peptide += 'X'  # unknown amino acid
-    # Reverse resulting peptide.
-    return peptide[::-1]
-
-
 def process_record(record):
     seq_str = str(record.seq)
     # Check if the sequence is flipped using the flipped forward primer.
@@ -147,15 +76,19 @@ def process_record(record):
         seq_str = str(record.seq)
         hit = str(Seq(rev_hit).reverse_complement())
         # Translate the hit (coding part of sequence).
-        peptide = translate(hit)
+        peptide = translate(hit, codon_table)
         peptide_rev = None
         # Find the part between fw and rev primers.
         if rev_hit := find_and_split(rev_primer_pattern, hit, 0):
             # Translate the hit again, but backwards.
-            peptide_rev = translate_backwards(rev_hit)
+            peptide_rev = translate_backwards(rev_hit, codon_table)
         # Optional: only if linker sequence is given, check if the peptide contains the linker.
         if linker_seq:
             correct_peptide_split = find_and_split(linker_pattern, peptide, 0)
+            if not correct_peptide_split:
+                correct_peptide_split = find_and_split(frameshift_linker_pattern, peptide, 0)
+                if correct_peptide_split:
+                    correct_peptide_split += '!'
             correct_peptide_split_rev = None
             if peptide_rev:
                 correct_peptide_split_rev = find_and_split(linker_pattern, peptide_rev, 0)
@@ -164,15 +97,21 @@ def process_record(record):
     # Check if the primer is in the sequence.
     if hit := find_and_split(fw_primer_pattern, seq_str, -1):
         # Translate the hit (coding part of sequence).
-        peptide = translate(hit)
+        peptide = translate(hit, codon_table)
         peptide_rev = None
         # Find the part between fw and rev primers.
         if rev_hit := find_and_split(rev_primer_pattern, hit, 0):
             # Translate the hit again, but backwards.
-            peptide_rev = translate_backwards(rev_hit)
+            peptide_rev = translate_backwards(rev_hit, codon_table)
         # Optional: only if linker sequence is given, check if the peptide contains the linker.
         if linker_seq:
             correct_peptide_split = find_and_split(linker_pattern, peptide, 0)
+            if not correct_peptide_split:
+                correct_peptide_split = find_and_split(frameshift_linker_pattern, peptide, 0)
+                if correct_peptide_split:
+                    correct_peptide_split += '!'
+
+            # TODO the thing above this should give the same effect as below
             correct_peptide_split_rev = None
             if peptide_rev:
                 correct_peptide_split_rev = find_and_split(linker_pattern, peptide_rev, 0)
@@ -201,13 +140,13 @@ def main():
                 pep_seq.append(result[0])
                 pep_seq_cnt[result[0]] += 1
                 DNA_seq.append(result[2])
-                if result[3]:
-                    correct_peptides_split.append(result[3])
-                if result[1]:
-                    pep_rev_seq.append(result[1])
-                    pep_rev_seq_cnt[result[1]] += 1
-                    if result[4]:
-                        correct_peptides_split_rev.append(result[4])
+                if correct_peptide_split := result[3]:
+                    correct_peptides_split.append(correct_peptide_split)
+                if peptide_rev := result[1]:
+                    pep_rev_seq.append(peptide_rev)
+                    pep_rev_seq_cnt[peptide_rev] += 1
+                    if correct_peptide_split_rev := result[4]:
+                        correct_peptides_split_rev.append(correct_peptide_split_rev)
     print(f'Parsed all records for {output_name}, writing files...')
 
     # Dictionary with all unique peptides and their count.
@@ -227,27 +166,41 @@ def main():
     if linker_seq:
         pep_spl_cnt = dict(Counter(correct_peptides_split).most_common())
         # Faster to write all lines at once, so first make a list.
-        peptide_fasta_lines = [f'>{i + 1}_{n}\n{peptide}\n' for i, (peptide, n) in enumerate(pep_spl_cnt.items())]
+        # peptide_fasta_lines = [f'>{i + 1}_{n}\n{peptide}\n' for i, (peptide, n) in enumerate(pep_spl_cnt.items())]
+
+        peptide_fasta_lines = []
+        for i, (peptide, n) in enumerate(pep_spl_cnt.items()):
+            if len(peptide) >= min_length:
+                if '!' in peptide:
+                    peptide = peptide[:-1]
+                    peptide_fasta_lines.append(f'>{i + 1}_{n}_fs\n{peptide}\n')
+                else:
+                    peptide_fasta_lines.append(f'>{i + 1}_{n}\n{peptide}\n')
+
         with open(clean_file, 'w') as peptide_fasta:
             peptide_fasta.writelines(peptide_fasta_lines)
 
         # Same for reverse translated peptides.
-        pep_spl_cnt_rev = dict(Counter(correct_peptides_split_rev).most_common())
-        # Faster to write all lines at once, so first make a list.
-        peptide_fasta_lines_rev = [f'>{i + 1}_{n}\n{peptide}\n' for i, (peptide, n) in enumerate(pep_spl_cnt_rev.items())]
-        with open(clean_file_rev, 'w') as peptide_fasta:
-            peptide_fasta.writelines(peptide_fasta_lines_rev)
-        print(f'Cleaved peptides based on given linker are located in {clean_file} and {clean_file_rev}.')
+        # pep_spl_cnt_rev = dict(Counter(correct_peptides_split_rev).most_common())
+        # # Faster to write all lines at once, so first make a list.
+        # peptide_fasta_lines_rev = [f'>{i + 1}_{n}\n{peptide}\n' for i, (peptide, n) in enumerate(pep_spl_cnt_rev.items())]
+        # with open(clean_file_rev, 'w') as peptide_fasta:
+        #     peptide_fasta.writelines(peptide_fasta_lines_rev)
+        print(f'Cleaved peptides based on given linker are located in {clean_file}.')
 
 
 if __name__ == '__main__':
-    # main()
-    for filename in os.listdir('SEQ'):
+    # Create folders for output files if they don't exist yet.
+    os.makedirs(f'OUT/{library}/RF1', exist_ok=True)
+    os.makedirs(f'OUT/{library}/RF2', exist_ok=True)
+    os.makedirs(f'OUT/Alignments/{library}/RF1', exist_ok=True)
+    os.makedirs(f'OUT/Alignments/{library}/RF2', exist_ok=True)
+    for filename in os.listdir(folder):
         # Skip any non fastq files.
         if filename.split('.')[-1] != 'fastq':
             continue
         # Set input file path.
-        input_file = os.path.join('SEQ', filename)
+        input_file = os.path.join(folder, filename)
         # Get sample name.
         sample = filename.split('_')[0]
         # Set reverse or forward
@@ -257,55 +210,27 @@ if __name__ == '__main__':
             output_name = f'{sample}_REV'
         # Get sample round and library.
         # sample_round = sample[-2:]
+        target = sample[2:5]
         sample_library = sample[-5:-2]
-        if sample_library == 'Cyc':
-            codon_table = {
-                "TTT": "F", "TCT": "S", "TAT": "Y", "TGT": "C",
-                "TTC": "F", "TCC": "S", "TAC": "Y", "TGC": "C",
-                "TTA": "L", "TCA": "S", "TAA": "*", "TGA": "*",
-                "TTG": "L", "TCG": "S", "TAG": "*", "TGG": "W",
+        if library == 'Linear':
+            if sample_library == 'Cyc':
+                print('Linear only')
+                continue
+        elif library == 'Cyclic':
+            if sample_library == 'Lin':
+                print('Cyclic only')
+                continue
 
-                "CTT": "L", "CCT": "P", "CAT": "H", "CGT": "R",
-                "CTC": "L", "CCC": "P", "CAC": "H", "CGC": "R",
-                "CTA": "L", "CCA": "P", "CAA": "Q", "CGA": "R",
-                "CTG": "L", "CCG": "P", "CAG": "Q", "CGG": "R",
-
-                "ATT": "I", "ACT": "T", "AAT": "N", "AGT": "Z",  # AGT -> Z (pentafluorophenylalanine)
-                "ATC": "I", "ACC": "T", "AAC": "N", "AGC": "S",
-                "ATA": "I", "ACA": "T", "AAA": "K", "AGA": "R",
-                "ATG": "M", "ACG": "T", "AAG": "K", "AGG": "R",
-
-                "GTT": "V", "GCT": "A", "GAT": "D", "GGT": "G",
-                "GTC": "V", "GCC": "A", "GAC": "D", "GGC": "G",
-                "GTA": "V", "GCA": "A", "GAA": "E", "GGA": "G",
-                "GTG": "V", "GCG": "A", "GAG": "E", "GGG": "G"
-            }
-        else:
-            codon_table = {
-                "TTT": "F", "TCT": "S", "TAT": "Y", "TGT": "C",
-                "TTC": "F", "TCC": "S", "TAC": "Y", "TGC": "C",
-                "TTA": "L", "TCA": "S", "TAA": "*", "TGA": "*",
-                "TTG": "L", "TCG": "S", "TAG": "*", "TGG": "W",
-
-                "CTT": "L", "CCT": "P", "CAT": "H", "CGT": "R",
-                "CTC": "L", "CCC": "P", "CAC": "H", "CGC": "R",
-                "CTA": "L", "CCA": "P", "CAA": "Q", "CGA": "R",
-                "CTG": "L", "CCG": "P", "CAG": "Q", "CGG": "R",
-
-                "ATT": "I", "ACT": "T", "AAT": "N", "AGT": "S",
-                "ATC": "I", "ACC": "T", "AAC": "N", "AGC": "S",
-                "ATA": "I", "ACA": "T", "AAA": "K", "AGA": "R",
-                "ATG": "M", "ACG": "T", "AAG": "K", "AGG": "R",
-
-                "GTT": "V", "GCT": "A", "GAT": "D", "GGT": "G",
-                "GTC": "V", "GCC": "A", "GAC": "D", "GGC": "G",
-                "GTA": "V", "GCA": "A", "GAA": "E", "GGA": "G",
-                "GTG": "V", "GCG": "A", "GAG": "E", "GGG": "G"
-            }
-
-        counts_file = f'OUT/peptide_counts_{output_name}.csv'
-        clean_file = f'OUT/peptide_clean_{output_name}.fasta'
-        clean_file_rev = f'OUT/peptide_clean_rev_{output_name}.fasta'
-        alignment_file = f'OUT/peptide_alignment{output_name}.?'
+        counts_file = f'OUT/Linear/{target}/peptide_counts_{output_name}.csv'
+        clean_file = f'OUT/Linear/{target}/peptide_clean_{output_name}.fasta'
+        alignment_input = f'OUT/Alignments/{library}/{target}/alignment_input_{output_name}.fasta'
+        # alignment_file = f'OUT/Alignments/Linear/{target}/peptide_alignment_{output_name}.aln'
         main()
-        # break
+
+        # Finally, prepare for alignments.
+        with open(clean_file, 'r') as f_full, open(alignment_input, 'w') as f_trunc:
+            data = f_full.readlines()
+            # Number of sequences * 2, as one sequence is 2 lines in the fasta file.
+            if len(data) > n*2:
+                data = data[0:n*2]
+            f_trunc.writelines(data)
