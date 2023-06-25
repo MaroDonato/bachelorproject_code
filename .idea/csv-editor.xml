@@ -45,20 +45,6 @@
             </Attribute>
           </value>
         </entry>
-        <entry key="/SEQ2/S2RF1LinR5_allreads_rnd5.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
-        <entry key="/SEQ2/summary.csv">
-          <value>
-            <Attribute>
-              <option name="separator" value="," />
-            </Attribute>
-          </value>
-        </entry>
       </map>
     </option>
   </component>

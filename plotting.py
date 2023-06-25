@@ -8,14 +8,14 @@ import numpy as np
 def plot_diversity_horizontal(plot_title, docs, titles, cycles):
     # Set the plot colors to VU colors
     plot_colors = {
-        'Round 0': '#0077B3',
-        'Round 1': '#4FAF48',
-        'Round 2': '#E8692D',
-        'Round 3': '#8E4DA4',
-        'Round 4': '#F2BA2F',
-        'Round 5': '#D4CAC8',
+        'Round 1': '#0077B3',
+        'Round 2': '#4FAF48',
+        'Round 3': '#E8692D',
+        'Round 4': '#8E4DA4',
+        'Round 5': '#F2BA2F',
         'Round 6': '#575756',
-        'Round 7': '#003F6C'
+        'Round 7': '#003F6C',
+        'Round 0': '#D4CAC8'
     }
     fig, axes = plt.subplots(1, 4, sharey=True, figsize=(8, 2))
     # Title.
@@ -30,7 +30,8 @@ def plot_diversity_horizontal(plot_title, docs, titles, cycles):
             df = pd.read_excel(doc, skiprows=2 + (cycles + 2) * i, nrows=cycles + 1)
             empty_df = df.empty
             if not df.empty:
-                ax.plot(df.iloc[:, 1], df.iloc[:, 2], color=plot_colors[f'Round {i}'], label=f'Round {i}')
+                linestyle = 'dashed' if i == 0 else None
+                ax.plot(df.iloc[:, 1], df.iloc[:, 2], color=plot_colors[f'Round {i}'], label=f'Round {i}', linestyle=linestyle)
             ax.set_title(title)
             ax.xaxis.set_ticks(np.arange(5, cycles + 0.0001, 10))
             ax.margins(x=0)
@@ -49,7 +50,41 @@ def plot_diversity_horizontal(plot_title, docs, titles, cycles):
     plt.show()
 
 
-def plot_recovery(recoveries, plot_title, ymin, ymax):
+def plot_diversity(plot_title, doc, title, cycles):
+    plot = {
+        0: 'Water',
+        1: 'Standard 2e5',
+        2: 'Standard 2e6',
+        3: 'Standard 2e7',
+        4: 'Standard 2e8',
+        5: 'Standard 5e8',
+        6: 'Input',
+        7: 'Output epoxy',
+        8: 'Output protein G'
+    }
+    fig = plt.figure()
+    # Title.
+    fig.suptitle(title, fontsize=16)
+
+    empty_df = False
+    i = -1
+    while not empty_df:
+        i += 1
+        df = pd.read_excel(doc, skiprows=2 + (cycles + 2) * i, nrows=cycles + 1)
+        empty_df = df.empty
+        if not df.empty:
+            plt.plot(df.iloc[:, 1], df.iloc[:, 2], label=plot[i])
+        plt.margins(x=0)
+    # X and Y labels
+    plt.xlabel('Cycles')
+    plt.ylabel('Fluorescence (R)')
+    plt.legend(frameon=False)
+    fig.tight_layout()
+    plt.savefig(plot_title + '.png', dpi=1200, transparent=True)
+    fig.show()
+
+
+def plot_recovery(recoveries, plot_title, file_name, ymin, ymax):
     # Initialise the plot.
     fig, axes = plt.subplots(
         1, (len(recoveries)), sharey='row',
@@ -101,12 +136,11 @@ def plot_recovery(recoveries, plot_title, ymin, ymax):
     plt.subplots_adjust(wspace=0, hspace=0)
     plt.legend(frameon=False)  # , title='Library')
     # Show the plot.
-    plt.savefig(plot_title + '.png', dpi=1200, transparent=True)
-    fig.savefig(plot_title + '.pdf', format='pdf')
+    plt.savefig(file_name + '.png', dpi=1200, transparent=True)
     plt.show()
 
 
-def plot_recovery_split(recoveries, plot_title, ymin1, ymax1, step1, ymin2, ymax2, step2):
+def plot_recovery_split(recoveries, plot_title, file_name, ymin1, ymax1, step1, ymin2, ymax2, step2):
     # Initialise the plot.
     fig, axes = plt.subplots(
         2, (len(recoveries)), sharey='row',
@@ -199,6 +233,5 @@ def plot_recovery_split(recoveries, plot_title, ymin1, ymax1, step1, ymin2, ymax
     # plt.yscale('log')
     # plt.legend(frameon=False)  # , title='Library')
     # Show the plot.
-    plt.savefig(plot_title + '.png', dpi=1200, transparent=True)
-    fig.savefig(plot_title + '.eps', format='eps')
+    plt.savefig(file_name + '.png', dpi=1200, transparent=True)
     plt.show()

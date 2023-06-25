@@ -1,10 +1,7 @@
-import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib import rc
-import numpy as np
 import os
-from plotting import plot_recovery, plot_recovery_split, plot_diversity_horizontal
-
+from plotting import plot_recovery, plot_recovery_split, plot_diversity_horizontal, plot_diversity
 
 # Font settings for all figures.
 rc('font', **{'family': 'sans-serif', 'sans-serif': ['Helvetica']})
@@ -46,12 +43,10 @@ def diversity_dict_from_folder(folder_1, folder_2):
         # Skip first selection.
         if sample[:2] != 'S2':
             continue
-        # Set reverse or forward
-        if '_R1_' in filename:
-            sample_name = f'{sample}_FW'
-        else:
+        # Skip reverse.
+        if '_R1_' not in filename:
             continue
-            # sample_name = f'{sample}_REV'
+        sample_name = f'{sample}_FW'
         # Get sample round and library.
         target = sample[2:5]
         sample_library = sample[-5:-2]
@@ -61,27 +56,29 @@ def diversity_dict_from_folder(folder_1, folder_2):
                 f'peptide_counts_{sample_name}.csv', 'r') as f2:
             total_seq = len(f1.readlines())/4
             unique_seq = len(f2.readlines())-1
-            diversities[target][sample_library][sample_name] = unique_seq/total_seq*100
+            diversities[target][sample_library][sample[-1]] = unique_seq/total_seq*100
     return diversities
 
 
 def generate_figures():
     # Plotting of recoveries.
-    plot_recovery_split(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds.xlsx', 'Recovery S1RF1'),
-                        'RF1 recovery', ymin1=0, ymax1=0.021, step1=0.002, ymin2=0.1, ymax2=0.7001, step2=0.1)
-    plot_recovery_split(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds.xlsx', 'Recovery S1RF2'),
-                        'RF2 recovery', ymin1=0, ymax1=0.021, step1=0.002, ymin2=0.1, ymax2=0.7001, step2=0.1)
-    plot_recovery(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds 2.xlsx', 'Recovery S2RF1'),
-                  'RF1 recovery', ymin=0, ymax=0.22001)
-    plot_recovery(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds 2.xlsx', 'Recovery S2RF2'),
-                  'RF2 recovery', ymin=0, ymax=0.22001)
+    # plot_recovery_split(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds.xlsx', 'Recovery RF1'),
+    #                     'RF1 recovery', 'RF1 recovery S1', ymin1=0, ymax1=0.021, step1=0.002,
+    #                     ymin2=0.1, ymax2=0.7001, step2=0.1)
+    # plot_recovery_split(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds.xlsx', 'Recovery RF2'),
+    #                     'RF2 recovery', 'RF2 recovery S1', ymin1=0, ymax1=0.021, step1=0.002,
+    #                     ymin2=0.1, ymax2=0.7001, step2=0.1)
+    # plot_recovery(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds 2.xlsx', 'Recovery RF1'),
+    #               'RF1 recovery', 'RF1 recovery S2', ymin=0, ymax=0.22001)
+    # plot_recovery(recovery_dict_from_excel('TRAP rounds (excel)/TRAP rounds 2.xlsx', 'Recovery RF2'),
+    #               'RF2 recovery', 'RF2 recovery S2', ymin=0, ymax=0.22001)
 
     # Plotting of qPCR diversities.
     docs = [
-        'qPCR of rPCRs of RF1 lin round 1-5.xlsx',
-        'qPCR of rPCRs of RF1 cyc round 1-5.xlsx',
-        'qPCR of rPCRs of RF2 lin round 1-4.xlsx',
-        'qPCR of rPCRs of RF2 cyc round 1-4.xlsx'
+        'qPCR/qPCR of rPCRs of RF1 lin round 1-5.xlsx',
+        'qPCR/qPCR of rPCRs of RF1 cyc round 1-5.xlsx',
+        'qPCR/qPCR of rPCRs of RF2 lin round 1-4.xlsx',
+        'qPCR/qPCR of rPCRs of RF2 cyc round 1-4.xlsx'
     ]
     titles = [
         'RF1 linear',
@@ -90,11 +87,8 @@ def generate_figures():
         'RF2 cyclic'
     ]
     cycles = 35
-    plot_diversity_horizontal('Diversity plot', docs, titles, cycles)
-
-    # Plotting of sequence diversities.
-    diversity = diversity_dict_from_folder('SEQ', 'OUT')
-    print(diversity)
+    # plot_diversity_horizontal('Diversity plot', docs, titles, cycles)
+    plot_diversity('Epoxy bead clone assay', 'qPCR/Epoxy qpcr.xlsx', 'Epoxy bead clone assay', cycles)
     print('Generated figures.')
 
 
